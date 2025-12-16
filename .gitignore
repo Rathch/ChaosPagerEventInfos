@@ -1,0 +1,32 @@
+.cursor/
+.specify/
+specs/
+
+# PHP
+vendor/
+composer.lock
+*.log
+*.cache
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+/tmp/event-pager-sent-hashes.txt
+*.tmp
+
+# PHPUnit
+.phpunit.result.cache
+phpunit.xml.bak
