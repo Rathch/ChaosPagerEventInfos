@@ -16,7 +16,7 @@ This script reads the event calendar from the CCC API every 5 minutes, identifie
 
 1. **Clone repository**:
    ```bash
-   git clone <repository-url>
+   git clone git@github.com:Rathch/ChaosPagerEventInfos.git
    cd ChaosPagerEventInfos
    ```
 
