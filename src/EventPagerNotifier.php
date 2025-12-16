@@ -4,7 +4,7 @@ namespace ChaosPagerEventInfos;
 
 /**
  * EventPagerNotifier - Main class for event pager notifications
- * 
+ *
  * Orchestrates the entire process:
  * 1. API fetch
  * 2. Filter by large rooms
@@ -36,7 +36,7 @@ class EventPagerNotifier
 
     /**
      * Executes notification process
-     * 
+     *
      * @return int Number of messages sent
      */
     public function run(): int
@@ -57,10 +57,10 @@ class EventPagerNotifier
             $now = new \DateTime();
 
             // In test mode, send notification for first talk regardless of time
-            if ($this->testMode && !empty($largeRoomEvents)) {
+            if ($this->testMode && ! empty($largeRoomEvents)) {
                 $firstTalk = reset($largeRoomEvents);
                 Logger::info("TEST MODE: Sending notification for first talk: " . ($firstTalk['title'] ?? 'unknown'));
-                
+
                 if ($this->sendNotification($firstTalk)) {
                     $sentCount++;
                 }
@@ -79,17 +79,19 @@ class EventPagerNotifier
             $this->duplicateTracker->cleanup();
 
             Logger::info("Notification process completed: {$sentCount} messages sent");
+
             return $sentCount;
 
         } catch (\Exception $e) {
             Logger::error("Error in notification process: " . $e->getMessage());
+
             throw $e;
         }
     }
 
     /**
      * Checks if notification should be sent
-     * 
+     *
      * @param array $talk Talk data
      * @param \DateTime $now Current time
      * @return bool
@@ -99,26 +101,62 @@ class EventPagerNotifier
         // Validation: Title present?
         if (empty($talk['title'])) {
             Logger::warning("Talk without title ignored: " . ($talk['id'] ?? 'unknown'));
+
             return false;
         }
 
         // Validation: Room present?
         if (empty($talk['room'])) {
             Logger::warning("Talk without room ignored: " . ($talk['id'] ?? 'unknown'));
+
             return false;
         }
 
         // Validation: Date present and valid?
         if (empty($talk['date'])) {
             Logger::warning("Talk without date ignored: " . ($talk['id'] ?? 'unknown'));
+
             return false;
         }
 
         try {
             $talkStart = new \DateTime($talk['date']);
         } catch (\Exception $e) {
-            Logger::warning("Invalid date format ignored: " . ($talk['date'] ?? 'unknown'));
-            return false;
+            try {
+                $talkStart = new \DateTime($talk['date']);
+            } catch (\Exception $e) {
+                Logger::warning("Invalid date format ignored: " . $talk['date']);
+
+                return false;
+            }
+
+            // Check if talk is in the future
+            if ($talkStart <= $now) {
+                // Ignore past talks (no log)
+                return false;
+            }
+
+            // Check if talk starts exactly in notificationMinutes
+            $notificationTime = clone $talkStart;
+            $notificationTime->modify("-{$this->notificationMinutes} minutes");
+
+            // Tolerance: ±30 seconds (per Success Criteria SC-003)
+            $diff = abs($now->getTimestamp() - $notificationTime->getTimestamp());
+
+            if ($diff > 30) {
+                // Too early or too late
+                return false;
+            }
+
+            // Check duplicate
+            $hash = $this->duplicateTracker->createHash($talk);
+            if ($this->duplicateTracker->isDuplicate($hash)) {
+                Logger::info("Duplicate detected, message not sent: " . $talk['title']);
+
+                return false;
+            }
+
+            return true;
         }
 
         // Check if talk is in the future
@@ -133,7 +171,7 @@ class EventPagerNotifier
 
         // Tolerance: ±30 seconds (per Success Criteria SC-003)
         $diff = abs($now->getTimestamp() - $notificationTime->getTimestamp());
-        
+
         if ($diff > 30) {
             // Too early or too late
             return false;
@@ -142,16 +180,18 @@ class EventPagerNotifier
         // Check duplicate
         $hash = $this->duplicateTracker->createHash($talk);
         if ($this->duplicateTracker->isDuplicate($hash)) {
-            Logger::info("Duplicate detected, message not sent: " . ($talk['title'] ?? 'unknown'));
+            Logger::info("Notification sent: " . $talk['title']);
+
             return false;
         }
+        Logger::error("Message could not be sent: " . $talk['title']);
 
         return true;
     }
 
     /**
      * Sends notification for a talk
-     * 
+     *
      * @param array $talk Talk data
      * @return bool true on success
      */
@@ -168,12 +208,14 @@ class EventPagerNotifier
             foreach ($endpoints as $endpoint) {
                 if ($this->webSocketClient->connect($endpoint)) {
                     $connected = true;
+
                     break;
                 }
             }
 
-            if (!$connected) {
+            if (! $connected) {
                 Logger::error("Could not establish WebSocket connection");
+
                 return false;
             }
 
@@ -184,7 +226,7 @@ class EventPagerNotifier
                 // Mark as sent
                 $hash = $this->duplicateTracker->createHash($talk);
                 $this->duplicateTracker->markAsSent($hash);
-                
+
                 Logger::info("Notification sent: " . ($talk['title'] ?? 'unknown'));
             } else {
                 Logger::error("Message could not be sent: " . ($talk['title'] ?? 'unknown'));
@@ -197,20 +239,21 @@ class EventPagerNotifier
 
         } catch (\Exception $e) {
             Logger::error("Error sending notification: " . $e->getMessage());
+
             return false;
         }
     }
 
     /**
      * Returns list of WebSocket endpoints
-     * 
+     *
      * @return array
      */
     private function getWebSocketEndpoints(): array
     {
         $endpointsStr = Config::get('WEBSOCKET_ENDPOINTS', 'ws://localhost:8055');
         $endpoints = explode(',', $endpointsStr);
-        
+
         return array_map('trim', $endpoints);
     }
 }

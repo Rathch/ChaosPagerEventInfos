@@ -7,7 +7,9 @@
         "php": ">=7.4"
     },
     "require-dev": {
-        "phpunit/phpunit": "^9.5"
+        "phpunit/phpunit": "^9.5",
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "phpstan/phpstan": "^1.10"
     },
     "autoload": {
         "psr-4": {
@@ -20,7 +22,14 @@
         }
     },
     "scripts": {
-        "test": "phpunit"
+        "test": "phpunit",
+        "lint": [
+            "@lint:cs",
+            "@lint:stan"
+        ],
+        "lint:cs": "php-cs-fixer fix --dry-run --diff",
+        "lint:cs:fix": "php-cs-fixer fix",
+        "lint:stan": "phpstan analyse"
     },
     "config": {
         "optimize-autoloader": true,

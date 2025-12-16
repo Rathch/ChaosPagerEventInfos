@@ -3,33 +3,18 @@
 
 /**
  * notify.php - CLI entry point for event pager notifications
- * 
+ *
  * Executed via cronjob every 5 minutes.
- * 
+ *
  * Usage: php bin/notify.php
  */
 
-// Use Composer autoloader if available, otherwise use manual requires
-$autoloadFile = __DIR__ . '/../vendor/autoload.php';
-if (file_exists($autoloadFile)) {
-    require_once $autoloadFile;
-} else {
-    // Manual autoloader (without Composer for MVP)
-    require_once __DIR__ . '/../src/Config.php';
-    require_once __DIR__ . '/../src/Logger.php';
-    require_once __DIR__ . '/../src/ApiClient.php';
-    require_once __DIR__ . '/../src/TalkFilter.php';
-    require_once __DIR__ . '/../src/DuplicateTracker.php';
-    require_once __DIR__ . '/../src/MessageFormatter.php';
-    require_once __DIR__ . '/../src/WebSocketClientInterface.php';
-    require_once __DIR__ . '/../src/MockWebSocketClient.php';
-    require_once __DIR__ . '/../src/WebSocketClient.php';
-    require_once __DIR__ . '/../src/EventPagerNotifier.php';
-}
+// Require Composer autoloader
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use ChaosPagerEventInfos\Config;
-use ChaosPagerEventInfos\Logger;
 use ChaosPagerEventInfos\EventPagerNotifier;
+use ChaosPagerEventInfos\Logger;
 
 // Error handling
 set_error_handler(function ($severity, $message, $file, $line) {
@@ -39,16 +24,16 @@ set_error_handler(function ($severity, $message, $file, $line) {
 try {
     // Load configuration
     Config::load();
-    
+
     // Initialize logger
     Logger::init();
-    
+
     Logger::info("=== Event Pager Notifications Script started ===");
-    
+
     // Execute notification process
     $notifier = new EventPagerNotifier();
     $sentCount = $notifier->run();
-    
+
     Logger::info("=== Script completed successfully ===");
     exit(0);
 
@@ -60,6 +45,6 @@ try {
     } else {
         error_log("Event Pager Notifications Error: " . $e->getMessage());
     }
-    
+
     exit(1);
 }

@@ -2,12 +2,12 @@
 
 namespace ChaosPagerEventInfos\Tests\Integration;
 
-use PHPUnit\Framework\TestCase;
 use ChaosPagerEventInfos\TalkFilter;
+use PHPUnit\Framework\TestCase;
 
 /**
  * Integration tests for TalkFilter
- * 
+ *
  * Tests filtering by large rooms.
  */
 class TalkFilterTest extends TestCase
@@ -80,7 +80,7 @@ class TalkFilterTest extends TestCase
     public function testGetLargeRooms(): void
     {
         $largeRooms = TalkFilter::getLargeRooms();
-        
+
         $this->assertIsArray($largeRooms);
         $this->assertCount(4, $largeRooms);
         $this->assertContains('One', $largeRooms);

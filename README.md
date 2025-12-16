@@ -9,27 +9,61 @@ This script reads the event calendar from the CCC API every 5 minutes, identifie
 ## Requirements
 
 - PHP 7.4+ (Raspberry Pi OS compatible)
+- Composer (for dependency management)
 - Internet connection for API requests
 - Optional: WebSocket server for real connection (MVP uses simulation)
 
 ## Installation
 
-1. **Clone repository**:
-   ```bash
-   git clone <repository-url>
-   cd ChaosPagerEventInfos
-   ```
+### Step 1: Install Composer on Raspberry Pi
 
-2. **Create configuration**:
-   ```bash
-   cp .env.example .env
-   # Edit .env as needed
-   ```
+If Composer is not already installed:
 
-3. **Optional: Composer Dependencies** (only for later real WebSocket connection):
-   ```bash
-   composer install
-   ```
+```bash
+# Download Composer installer
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+
+# Verify installer (optional, but recommended)
+php -r "if (hash_file('sha384', 'composer-setup.php') === 'dac665fdc30fdd8ec78b38b9800061b4150413ff2e3b6f88543c636f7cd84f6db9189d43a81e5503cda447da73c7e5b6') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+
+# Install Composer globally
+php composer-setup.php
+sudo mv composer.phar /usr/local/bin/composer
+
+# Cleanup
+rm composer-setup.php
+
+# Verify installation
+composer --version
+```
+
+**Alternative**: Install via package manager (if available):
+```bash
+sudo apt-get update
+sudo apt-get install composer
+```
+
+### Step 2: Clone Repository
+
+```bash
+git clone <repository-url>
+cd ChaosPagerEventInfos
+```
+
+### Step 3: Install Dependencies
+
+```bash
+composer install --no-dev
+```
+
+**Note**: Use `--no-dev` for production (Raspberry Pi) to skip development dependencies like PHPUnit, PHP CS Fixer, and PHPStan. For development, use `composer install` without flags.
+
+### Step 4: Create Configuration
+
+```bash
+cp .env.example .env
+# Edit .env as needed
+```
 
 ## Configuration (.env)
 
@@ -154,11 +188,16 @@ sudo tail -f /var/log/syslog | grep CRON
 - Verify PHP path is correct: `which php`
 - Check script permissions: `chmod +x bin/notify.php`
 - Verify `.env` file exists and is readable
+- **Important**: Ensure `vendor/autoload.php` exists (run `composer install --no-dev` if missing)
 - Check cron logs: `sudo tail -f /var/log/syslog | grep CRON`
 
 **Problem**: "Command not found" errors
 - Use absolute paths for PHP and script
 - Ensure PHP is in PATH or use full path: `which php`
+
+**Problem**: "Class not found" or "Composer autoloader missing" errors
+- Run `composer install --no-dev` to install dependencies
+- Verify `vendor/autoload.php` exists in project root
 
 **Problem**: Script runs but no output
 - Check log file: `tail -f logs/event-pager.log`
@@ -210,19 +249,31 @@ bin/
 
 ### Tests
 
-Tests can be run with PHPUnit (see `composer.json`):
+Tests can be run with PHPUnit:
 
 ```bash
 composer install
 vendor/bin/phpunit
 ```
 
+### Linting
+
+Code quality checks:
+
+```bash
+# Run all linting checks
+composer lint
+
+# Check code style (dry-run)
+composer lint:cs
+
+# Fix code style automatically
+composer lint:cs:fix
+
+# Run static analysis
+composer lint:stan
+```
+
 ## License
 
 GPL-3.0-or-later (see LICENSE)
-
-## Further Documentation
-
-- [Feature Specification](specs/001-event-pager-notifications/spec.md)
-- [Implementation Plan](specs/001-event-pager-notifications/plan.md)
-- [Quickstart Guide](specs/001-event-pager-notifications/quickstart.md)

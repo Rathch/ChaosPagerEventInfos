@@ -1,0 +1,10 @@
+parameters:
+    level: 8
+    paths:
+        - src
+        - bin
+        - tests
+    excludePaths:
+        - tests/integration
+    checkMissingIterableValueType: false
+    checkGenericClassInNonGenericObjectType: false

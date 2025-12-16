@@ -2,14 +2,14 @@
 
 namespace ChaosPagerEventInfos\Tests\Integration;
 
-use PHPUnit\Framework\TestCase;
-use ChaosPagerEventInfos\MessageFormatter;
 use ChaosPagerEventInfos\Config;
 use ChaosPagerEventInfos\Logger;
+use ChaosPagerEventInfos\MessageFormatter;
+use PHPUnit\Framework\TestCase;
 
 /**
  * Integration tests for MessageFormatter
- * 
+ *
  * Tests message formatting and JSON sanitization.
  */
 class MessageFormatterTest extends TestCase
@@ -19,11 +19,11 @@ class MessageFormatterTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Create temporary .env file for testing
         $this->testEnvFile = sys_get_temp_dir() . '/test-env-' . uniqid() . '.env';
         file_put_contents($this->testEnvFile, "RIC=1142\nLOG_FILE=/tmp/test.log\n");
-        
+
         // Initialize Config with test file
         Config::load($this->testEnvFile);
         Logger::init();
@@ -45,7 +45,7 @@ class MessageFormatterTest extends TestCase
         $talk = [
             'title' => 'Test Talk',
             'date' => '2025-12-27T14:00:00+01:00',
-            'room' => 'One'
+            'room' => 'One',
         ];
 
         $message = MessageFormatter::formatMessage($talk);
@@ -64,7 +64,7 @@ class MessageFormatterTest extends TestCase
         $talk = [
             'title' => 'Test Talk',
             'date' => '2025-12-27T14:00:00+01:00',
-            'room' => 'One'
+            'room' => 'One',
         ];
 
         $message = MessageFormatter::createWebSocketMessage($talk);
@@ -86,7 +86,7 @@ class MessageFormatterTest extends TestCase
         $talk = [
             'title' => 'Test Talk',
             'date' => '2025-12-27T14:00:00+01:00',
-            'room' => 'One'
+            'room' => 'One',
         ];
 
         $message = MessageFormatter::createWebSocketMessage($talk, 9999);
@@ -102,7 +102,7 @@ class MessageFormatterTest extends TestCase
         $talk = [
             'title' => 'Test Talk with "quotes" & special chars',
             'date' => '2025-12-27T14:00:00+01:00',
-            'room' => 'One'
+            'room' => 'One',
         ];
 
         $message = MessageFormatter::formatMessage($talk);
@@ -120,7 +120,7 @@ class MessageFormatterTest extends TestCase
         $talk = [
             'title' => 'Test Talk',
             'date' => '2025-12-27T14:00:00+01:00',
-            'room' => 'One'
+            'room' => 'One',
         ];
 
         $message = MessageFormatter::createWebSocketMessage($talk);
@@ -128,7 +128,7 @@ class MessageFormatterTest extends TestCase
         // Should be JSON-encodable
         $json = json_encode($message);
         $this->assertNotFalse($json);
-        
+
         // Should be valid JSON
         $decoded = json_decode($json, true);
         $this->assertIsArray($decoded);
@@ -143,7 +143,7 @@ class MessageFormatterTest extends TestCase
         $talk = [
             'title' => 'Test Talk',
             'date' => '2025-12-27T14:30:00+01:00',
-            'room' => 'One'
+            'room' => 'One',
         ];
 
         $message = MessageFormatter::formatMessage($talk);
@@ -159,7 +159,7 @@ class MessageFormatterTest extends TestCase
         $talk = [
             'title' => 'Test Talk',
             'date' => 'invalid-date',
-            'room' => 'One'
+            'room' => 'One',
         ];
 
         // Should not throw exception, but return default time
