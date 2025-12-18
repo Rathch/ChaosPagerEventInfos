@@ -34,7 +34,7 @@ class RealHttpClient implements HttpClientInterface
                     'User-Agent: ChaosPagerEventInfos/1.0'
                 ],
                 'content' => $jsonPayload,
-                'timeout' => 10
+                'timeout' => 5  // Reduced timeout to prevent hanging
             ]
         ]);
 

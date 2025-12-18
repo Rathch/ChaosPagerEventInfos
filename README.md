@@ -154,16 +154,18 @@ To test the HTTP POST functionality:
 
 #### Step 1: Find PHP Path
 
-On Raspberry Pi, PHP might not be in `/usr/bin/php`. Find the correct path:
+Find the correct PHP path on your system:
 
 ```bash
 which php
 ```
 
 Common paths:
-- `/usr/bin/php` (standard)
+- `/usr/bin/php` (standard Linux)
 - `/usr/local/bin/php` (if compiled from source)
 - `/opt/php/bin/php` (if installed via package manager)
+- On macOS: `/usr/bin/php` or `/opt/homebrew/bin/php` (if installed via Homebrew)
+- On WSL: `/usr/bin/php`
 
 #### Step 2: Get Absolute Script Path
 
@@ -172,7 +174,7 @@ Get the absolute path to the script:
 ```bash
 cd /path/to/ChaosPagerEventInfos
 pwd
-# Example output: /home/pi/ChaosPagerEventInfos
+# Example output: /home/user/ChaosPagerEventInfos
 ```
 
 The full script path will be: `$(pwd)/bin/notify.php`
@@ -180,9 +182,9 @@ The full script path will be: `$(pwd)/bin/notify.php`
 #### Step 3: Create Log Directory (if needed)
 
 ```bash
-mkdir -p /path/to/logs
-# Or use the logs directory in the project:
-mkdir -p /home/pi/ChaosPagerEventInfos/logs
+mkdir -p logs
+# Or use absolute path:
+mkdir -p /path/to/ChaosPagerEventInfos/logs
 ```
 
 #### Step 4: Test Manual Execution
@@ -190,7 +192,9 @@ mkdir -p /home/pi/ChaosPagerEventInfos/logs
 Before setting up the cronjob, test manually:
 
 ```bash
-/usr/bin/php /home/pi/ChaosPagerEventInfos/bin/notify.php
+php bin/notify.php
+# Or with full path:
+/usr/bin/php /path/to/ChaosPagerEventInfos/bin/notify.php
 ```
 
 If this works, proceed to cronjob setup.
@@ -203,16 +207,27 @@ crontab -e
 
 #### Step 6: Add Cronjob Entry
 
-Add this line (adjust paths according to your system):
-
+**For Production (every 5 minutes):**
 ```bash
 # Run every 5 minutes
-*/5 * * * * /usr/bin/php /home/pi/ChaosPagerEventInfos/bin/notify.php >> /home/pi/ChaosPagerEventInfos/logs/cron.log 2>&1
+*/5 * * * * /usr/bin/php /path/to/ChaosPagerEventInfos/bin/notify.php >> /path/to/ChaosPagerEventInfos/logs/cron.log 2>&1
+```
+
+**For Local Testing (every minute - for faster testing):**
+```bash
+# Run every minute (for local testing)
+* * * * * /usr/bin/php /path/to/ChaosPagerEventInfos/bin/notify.php >> /path/to/ChaosPagerEventInfos/logs/cron.log 2>&1
+```
+
+**For Local Testing with Time Simulation (every minute):**
+```bash
+# Run every minute with time simulation (set SIMULATE_CURRENT_TIME in .env)
+* * * * * /usr/bin/php /path/to/ChaosPagerEventInfos/bin/notify.php >> /path/to/ChaosPagerEventInfos/logs/cron.log 2>&1
 ```
 
 **Important**: Replace paths with your actual paths:
 - `/usr/bin/php` → Your PHP path from Step 1
-- `/home/pi/ChaosPagerEventInfos` → Your project path from Step 2
+- `/path/to/ChaosPagerEventInfos` → Your project path from Step 2
 
 #### Step 7: Verify Cronjob
 
@@ -224,24 +239,89 @@ crontab -l
 
 #### Step 8: Test Cronjob Execution
 
-Wait for the next 5-minute interval, or trigger manually:
-
+**On Linux/WSL:**
 ```bash
 # Check cron service status
 sudo systemctl status cron
 
-# View cron logs (on Raspberry Pi OS / Debian)
+# View cron logs (on Debian/Ubuntu/WSL)
 sudo tail -f /var/log/syslog | grep CRON
+
+# Or check the cron log file directly
+tail -f logs/cron.log
 ```
+
+**On macOS:**
+```bash
+# Check cron service (macOS uses launchd, but crontab still works)
+# View cron logs
+tail -f /var/log/system.log | grep cron
+
+# Or check the cron log file directly
+tail -f logs/cron.log
+```
+
+**Manual Test (run immediately):**
+```bash
+# Run the script manually to test
+php bin/notify.php
+
+# Check if it worked
+tail -n 20 logs/event-pager.log
+```
+
+#### Local Testing Setup
+
+For local testing, you can set up a cronjob that runs more frequently:
+
+1. **Configure .env for testing:**
+   ```env
+   HTTP_MODE=simulate
+   TEST_MODE=false
+   SIMULATE_CURRENT_TIME=2025-12-27T10:15:00+01:00
+   ```
+
+2. **Add cronjob that runs every minute:**
+   ```bash
+   crontab -e
+   ```
+   
+   Add this line:
+   ```bash
+   * * * * * /usr/bin/php /path/to/ChaosPagerEventInfos/bin/notify.php >> /path/to/ChaosPagerEventInfos/logs/cron.log 2>&1
+   ```
+
+3. **Monitor logs in real-time:**
+   ```bash
+   # In one terminal
+   tail -f logs/event-pager.log
+   
+   # In another terminal (optional)
+   tail -f logs/cron.log
+   ```
+
+4. **Change simulated time to test different scenarios:**
+   - Edit `.env` and change `SIMULATE_CURRENT_TIME`
+   - The cronjob will pick up the new time on the next run
+
+5. **Remove test cronjob when done:**
+   ```bash
+   crontab -e
+   # Remove or comment out the test cronjob line
+   ```
 
 #### Troubleshooting
 
 **Problem**: Cronjob doesn't run
-- Check if cron service is running: `sudo systemctl status cron`
+- **Linux/WSL**: Check if cron service is running: `sudo systemctl status cron`
+- **macOS**: Cronjobs run automatically, no service to check
 - Verify PHP path is correct: `which php`
 - Check script permissions: `chmod +x bin/notify.php`
 - Verify `.env` file exists and is readable
-- Check cron logs: `sudo tail -f /var/log/syslog | grep CRON`
+- Check cron logs: 
+  - Linux/WSL: `sudo tail -f /var/log/syslog | grep CRON`
+  - macOS: `tail -f /var/log/system.log | grep cron`
+  - Or check: `tail -f logs/cron.log`
 
 **Problem**: "Command not found" errors
 - Use absolute paths for PHP and script
