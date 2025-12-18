@@ -44,6 +44,7 @@ See `.env.example` for all available configuration options:
 - `SENT_HASHES_FILE`: Path to temporary hash list file for duplicate tracking (default: `logs/sent-hashes.txt`)
 - `RIC`: Radio Identification Code (default: 1142)
 - `TEST_MODE`: If `true`, sends notification for first found talk in large room regardless of time (useful for testing). Default: `false`
+- `SIMULATE_CURRENT_TIME`: Simulated current time for local testing (ISO-8601 format, e.g., `"2025-12-27T10:15:00+01:00"`). If set, uses this time instead of system time. Useful for testing time-based notification logic. Leave empty to use real system time.
 
 ### Example .env Configuration
 
@@ -64,6 +65,11 @@ SENT_HASHES_FILE=logs/sent-hashes.txt
 
 # Testing
 TEST_MODE=false
+
+# Time Simulation (optional, for local testing)
+# Uncomment and set to a specific time to simulate time-based notifications
+# Example: Set to 15 minutes before a talk start time
+# SIMULATE_CURRENT_TIME=2025-12-27T10:15:00+01:00
 ```
 
 ## Usage
@@ -85,6 +91,45 @@ TEST_MODE=true
 When enabled, the script will send a notification for the first talk found in a large room, regardless of the current time. This is useful for testing the complete notification flow.
 
 **Important**: Remember to set `TEST_MODE=false` for production use!
+
+### Time Simulation Mode
+
+To test the time-based notification logic locally without waiting for the actual time, you can use `SIMULATE_CURRENT_TIME`:
+
+```env
+SIMULATE_CURRENT_TIME=2025-12-27T10:15:00+01:00
+TEST_MODE=false
+```
+
+**How it works:**
+- When `SIMULATE_CURRENT_TIME` is set, the script uses this time instead of the current system time
+- The script will check which talks start exactly 15 minutes after the simulated time (±30 seconds tolerance)
+- This allows you to test the time-based notification logic locally
+- **Important**: Set `TEST_MODE=false` when using time simulation, otherwise TEST_MODE will override the time-based logic
+
+**Example usage:**
+1. Find a talk in the API that starts at, e.g., `2025-12-27T10:30:00+01:00`
+2. Set `SIMULATE_CURRENT_TIME=2025-12-27T10:15:00+01:00` (15 minutes before the talk)
+3. Set `TEST_MODE=false` to enable time-based logic
+4. Run the script - it should send a notification for that talk
+5. The log will show detailed information about which talks were checked and why they were/were not sent
+
+**Log output example:**
+```
+[2025-12-27 10:15:00] INFO: Starting event pager notification process (SIMULATED TIME: 2025-12-27 10:15:00)
+[2025-12-27 10:15:00] INFO: Checking 5 talks for time-based notifications (SIMULATION MODE) (current time: 2025-12-27 10:15:00)
+[2025-12-27 10:15:00] INFO:   - Talk 1: Too early (notification would be sent in 30 minutes)
+[2025-12-27 10:15:00] INFO: ✓ Talk matches time criteria: Grand opening (starts at 2025-12-27T10:30:00+01:00)
+[2025-12-27 10:15:00] INFO: Notification sent at 2025-12-27 10:15:00: Grand opening
+[2025-12-27 10:15:00] INFO: Simulation complete: Checked 5 talks, 1 notifications sent
+```
+
+**Important**: 
+- Leave `SIMULATE_CURRENT_TIME` empty or unset for production use (uses real system time)
+- Set `TEST_MODE=false` when using time simulation
+- The simulated time is logged at the start of the process
+- The actual send time is logged with each notification
+- **Duplicate tracking**: If you run the script multiple times with the same simulated time, already sent messages will be detected as duplicates. To test with the same time again, delete the `SENT_HASHES_FILE` or use a different simulated time
 
 ### Testing HTTP Requests
 
@@ -309,10 +354,6 @@ src/
 bin/
 └── notify.php                # CLI entry point
 ```
-
-**Note**: 
-- WebSocket-related classes (`WebSocketClient.php`, `WebSocketClientInterface.php`, `MockWebSocketClient.php`) are deprecated and kept for backward compatibility. The system now uses HTTP POST requests instead.
-- The old `createWebSocketMessage()` method in `MessageFormatter` is deprecated. Use `createHttpMessage()` instead.
 
 ## Development
 

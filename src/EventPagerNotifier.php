@@ -41,7 +41,11 @@ class EventPagerNotifier
      */
     public function run(): int
     {
-        Logger::info("Starting event pager notification process" . ($this->testMode ? " (TEST MODE)" : ""));
+        $simulatedTime = $this->getCurrentTime();
+        $timeInfo = $simulatedTime !== null 
+            ? " (SIMULATED TIME: " . $simulatedTime->format('Y-m-d H:i:s') . ")" 
+            : "";
+        Logger::info("Starting event pager notification process" . ($this->testMode ? " (TEST MODE)" : "") . $timeInfo);
 
         try {
             // 1. API fetch
@@ -54,10 +58,12 @@ class EventPagerNotifier
 
             // 3. Time check and sending
             $sentCount = 0;
-            $now = new \DateTime();
+            $now = $this->getCurrentTime() ?? new \DateTime();
+            $isSimulatedTime = $this->getCurrentTime() !== null;
 
-            // In test mode, send notification for first talk regardless of time
-            if ($this->testMode && !empty($largeRoomEvents)) {
+            // In test mode WITHOUT simulated time, send notification for first talk regardless of time
+            // If simulated time is set, use time-based logic even in test mode
+            if ($this->testMode && !$isSimulatedTime && !empty($largeRoomEvents)) {
                 $firstTalk = reset($largeRoomEvents);
                 Logger::info("TEST MODE: Sending notification for first talk: " . ($firstTalk['title'] ?? 'unknown'));
                 
@@ -65,13 +71,31 @@ class EventPagerNotifier
                     $sentCount++;
                 }
             } else {
-                // Normal mode: check time for each talk
+                // Normal mode or simulated time mode: check time for each talk
+                $modeInfo = $isSimulatedTime ? " (SIMULATION MODE)" : "";
+                Logger::info("Checking " . count($largeRoomEvents) . " talks for time-based notifications{$modeInfo} (current time: " . $now->format('Y-m-d H:i:s') . ")");
+                
+                $checkedCount = 0;
                 foreach ($largeRoomEvents as $talk) {
+                    $checkedCount++;
+                    $talkTitle = $talk['title'] ?? 'unknown';
+                    $talkDate = $talk['date'] ?? 'unknown';
+                    
                     if ($this->shouldSendNotification($talk, $now)) {
+                        Logger::info("✓ Talk matches time criteria: {$talkTitle} (starts at {$talkDate})");
                         if ($this->sendNotification($talk)) {
                             $sentCount++;
                         }
+                    } else {
+                        // Log why talk was not sent (only in simulation mode to avoid log spam)
+                        if ($isSimulatedTime) {
+                            $this->logWhyTalkNotSent($talk, $now);
+                        }
                     }
+                }
+                
+                if ($isSimulatedTime) {
+                    Logger::info("Simulation complete: Checked {$checkedCount} talks, {$sentCount} notifications sent");
                 }
             }
 
@@ -127,25 +151,27 @@ class EventPagerNotifier
             return false;
         }
 
-        // Check if talk starts exactly in notificationMinutes
-        $notificationTime = clone $talkStart;
-        $notificationTime->modify("-{$this->notificationMinutes} minutes");
+        // Calculate time until talk starts
+        $timeUntilTalk = $talkStart->getTimestamp() - $now->getTimestamp();
+        $minutesUntilTalk = round($timeUntilTalk / 60);
 
-        // Tolerance: ±30 seconds (per Success Criteria SC-003)
-        $diff = abs($now->getTimestamp() - $notificationTime->getTimestamp());
-        
-        if ($diff > 30) {
-            // Too early or too late
+        // Check if we're within the notification window (0 to notificationMinutes minutes before talk)
+        // We want to send notifications if we're within 15 minutes before the talk
+        // Even if we're a bit late (e.g., script runs at 10:31 for a 10:45 talk)
+        if ($minutesUntilTalk > $this->notificationMinutes) {
+            // Too early - more than 15 minutes before talk
             return false;
         }
 
-        // Check duplicate
+        // Check duplicate first - if already sent, don't send again
         $hash = $this->duplicateTracker->createHash($talk);
         if ($this->duplicateTracker->isDuplicate($hash)) {
             Logger::info("Duplicate detected, message not sent: " . ($talk['title'] ?? 'unknown'));
             return false;
         }
 
+        // Within notification window and not a duplicate - send notification
+        // This handles cases where script runs slightly late (e.g., 10:31 for 10:45 talk)
         return true;
     }
 
@@ -164,6 +190,10 @@ class EventPagerNotifier
             // Get HTTP endpoint
             $endpoint = $this->getHttpEndpoint();
 
+            // Get current time for logging
+            $sendTime = $this->getCurrentTime() ?? new \DateTime();
+            $sendTimeFormatted = $sendTime->format('Y-m-d H:i:s');
+
             // Send HTTP POST request
             $success = $this->httpClient->sendPost($endpoint, $payload);
 
@@ -172,9 +202,9 @@ class EventPagerNotifier
                 $hash = $this->duplicateTracker->createHash($talk);
                 $this->duplicateTracker->markAsSent($hash);
                 
-                Logger::info("Notification sent: " . ($talk['title'] ?? 'unknown'));
+                Logger::info("Notification sent at {$sendTimeFormatted}: " . ($talk['title'] ?? 'unknown'));
             } else {
-                Logger::error("Message could not be sent: " . ($talk['title'] ?? 'unknown'));
+                Logger::error("Message could not be sent at {$sendTimeFormatted}: " . ($talk['title'] ?? 'unknown'));
             }
 
             return $success;
@@ -193,5 +223,102 @@ class EventPagerNotifier
     private function getHttpEndpoint(): string
     {
         return Config::get('HTTP_ENDPOINT', 'http://192.168.188.21:5000/send');
+    }
+
+    /**
+     * Gets current time (simulated or real)
+     * 
+     * If SIMULATE_CURRENT_TIME is set in config, returns that DateTime.
+     * Otherwise returns null (caller should use new \DateTime()).
+     * 
+     * @return \DateTime|null Simulated time or null for real time
+     */
+    private function getCurrentTime(): ?\DateTime
+    {
+        $simulateTime = Config::get('SIMULATE_CURRENT_TIME');
+        
+        if (empty($simulateTime)) {
+            return null;
+        }
+
+        try {
+            $simulatedDateTime = new \DateTime($simulateTime);
+            return $simulatedDateTime;
+        } catch (\Exception $e) {
+            Logger::warning("Invalid SIMULATE_CURRENT_TIME format: {$simulateTime}. Using real time instead.");
+            return null;
+        }
+    }
+
+    /**
+     * Logs why a talk was not sent (for debugging in simulation mode)
+     * 
+     * @param array $talk Talk data
+     * @param \DateTime $now Current time
+     * @return void
+     */
+    private function logWhyTalkNotSent(array $talk, \DateTime $now): void
+    {
+        $talkTitle = $talk['title'] ?? 'unknown';
+        
+        // Check each condition
+        if (empty($talk['title'])) {
+            Logger::info("  - {$talkTitle}: No title");
+            return;
+        }
+        
+        if (empty($talk['room'])) {
+            Logger::info("  - {$talkTitle}: No room");
+            return;
+        }
+        
+        if (empty($talk['date'])) {
+            Logger::info("  - {$talkTitle}: No date");
+            return;
+        }
+        
+        try {
+            $talkStart = new \DateTime($talk['date']);
+        } catch (\Exception $e) {
+            Logger::info("  - {$talkTitle}: Invalid date format");
+            return;
+        }
+        
+        // Check if talk is in the past
+        if ($talkStart <= $now) {
+            $diff = $now->getTimestamp() - $talkStart->getTimestamp();
+            $diffMinutes = round($diff / 60);
+            Logger::info("  - {$talkTitle}: Talk already started ({$diffMinutes} minutes ago)");
+            return;
+        }
+        
+        // Check time window
+        $timeUntilTalk = $talkStart->getTimestamp() - $now->getTimestamp();
+        $minutesUntilTalk = round($timeUntilTalk / 60);
+        
+        if ($minutesUntilTalk > $this->notificationMinutes) {
+            // Too early - more than 15 minutes before talk (skip logging to reduce spam)
+            return;
+        }
+        
+        if ($minutesUntilTalk < 0) {
+            // Talk already started
+            $diffMinutes = abs($minutesUntilTalk);
+            Logger::info("  - {$talkTitle}: Talk already started ({$diffMinutes} minutes ago)");
+            return;
+        }
+        
+        // Within notification window - check why it wasn't sent
+        // (should only happen if duplicate or other validation failed)
+        
+        // Check duplicate
+        $hash = $this->duplicateTracker->createHash($talk);
+        if ($this->duplicateTracker->isDuplicate($hash)) {
+            Logger::info("  - {$talkTitle}: Already sent (duplicate)");
+            return;
+        }
+        
+        // Should have been sent but wasn't (shouldn't happen)
+        Logger::warning("  - {$talkTitle}: Should have been sent but wasn't (unknown reason)");
     }
 }
