@@ -21,9 +21,10 @@ if (file_exists($autoloadFile)) {
     require_once __DIR__ . '/../src/TalkFilter.php';
     require_once __DIR__ . '/../src/DuplicateTracker.php';
     require_once __DIR__ . '/../src/MessageFormatter.php';
-    require_once __DIR__ . '/../src/WebSocketClientInterface.php';
-    require_once __DIR__ . '/../src/MockWebSocketClient.php';
-    require_once __DIR__ . '/../src/WebSocketClient.php';
+    require_once __DIR__ . '/../src/HttpClientInterface.php';
+    require_once __DIR__ . '/../src/MockHttpClient.php';
+    require_once __DIR__ . '/../src/RealHttpClient.php';
+    require_once __DIR__ . '/../src/HttpClient.php';
     require_once __DIR__ . '/../src/EventPagerNotifier.php';
 }
 

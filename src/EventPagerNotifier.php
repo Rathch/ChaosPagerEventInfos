@@ -11,25 +11,25 @@ namespace ChaosPagerEventInfos;
  * 3. Time check (15 minutes before start)
  * 4. Duplicate check
  * 5. Message creation
- * 6. Send via WebSocket
+ * 6. Send via HTTP POST
  */
 class EventPagerNotifier
 {
     private ApiClient $apiClient;
     private DuplicateTracker $duplicateTracker;
-    private WebSocketClientInterface $webSocketClient;
+    private HttpClientInterface $httpClient;
     private int $notificationMinutes;
     private bool $testMode;
 
     public function __construct(
         ?ApiClient $apiClient = null,
         ?DuplicateTracker $duplicateTracker = null,
-        ?WebSocketClientInterface $webSocketClient = null,
+        ?HttpClientInterface $httpClient = null,
         int $notificationMinutes = 15
     ) {
         $this->apiClient = $apiClient ?? new ApiClient();
         $this->duplicateTracker = $duplicateTracker ?? new DuplicateTracker();
-        $this->webSocketClient = $webSocketClient ?? WebSocketClient::create();
+        $this->httpClient = $httpClient ?? HttpClient::create();
         $this->notificationMinutes = $notificationMinutes;
         $this->testMode = filter_var(Config::get('TEST_MODE', 'false'), FILTER_VALIDATE_BOOLEAN);
     }
@@ -158,27 +158,14 @@ class EventPagerNotifier
     private function sendNotification(array $talk): bool
     {
         try {
-            // Create message
-            $message = MessageFormatter::createWebSocketMessage($talk);
+            // Create message payload
+            $payload = MessageFormatter::createHttpMessage($talk);
 
-            // Connect to WebSocket (first endpoint from list)
-            $endpoints = $this->getWebSocketEndpoints();
-            $connected = false;
+            // Get HTTP endpoint
+            $endpoint = $this->getHttpEndpoint();
 
-            foreach ($endpoints as $endpoint) {
-                if ($this->webSocketClient->connect($endpoint)) {
-                    $connected = true;
-                    break;
-                }
-            }
-
-            if (!$connected) {
-                Logger::error("Could not establish WebSocket connection");
-                return false;
-            }
-
-            // Send message
-            $success = $this->webSocketClient->send($message);
+            // Send HTTP POST request
+            $success = $this->httpClient->sendPost($endpoint, $payload);
 
             if ($success) {
                 // Mark as sent
@@ -190,9 +177,6 @@ class EventPagerNotifier
                 Logger::error("Message could not be sent: " . ($talk['title'] ?? 'unknown'));
             }
 
-            // Disconnect
-            $this->webSocketClient->disconnect();
-
             return $success;
 
         } catch (\Exception $e) {
@@ -202,15 +186,12 @@ class EventPagerNotifier
     }
 
     /**
-     * Returns list of WebSocket endpoints
+     * Returns HTTP endpoint URL
      * 
-     * @return array
+     * @return string
      */
-    private function getWebSocketEndpoints(): array
+    private function getHttpEndpoint(): string
     {
-        $endpointsStr = Config::get('WEBSOCKET_ENDPOINTS', 'ws://localhost:8055');
-        $endpoints = explode(',', $endpointsStr);
-        
-        return array_map('trim', $endpoints);
+        return Config::get('HTTP_ENDPOINT', 'http://192.168.188.21:5000/send');
     }
 }

@@ -5,7 +5,7 @@ namespace ChaosPagerEventInfos;
 /**
  * MessageFormatter - Formats messages for pager
  * 
- * Creates messages in format: "Talk-Title | Time | Room"
+ * Creates messages in format: "HH:MM, Room, Title"
  * JSON sanitization is done via json_encode().
  */
 class MessageFormatter
@@ -13,7 +13,8 @@ class MessageFormatter
     /**
      * Formats talk data to message text
      * 
-     * Format: "Talk-Title | HH:MM | Room"
+     * Format: "HH:MM, Room, Title"
+     * Example: "10:30, One, Grand opening"
      * 
      * @param array $talk Talk data
      * @return string Message text
@@ -27,7 +28,7 @@ class MessageFormatter
         // Parse date and extract time (HH:MM)
         $time = self::extractTime($date);
 
-        return "{$title} | {$time} | {$room}";
+        return "{$time}, {$room}, {$title}";
     }
 
     /**
@@ -48,8 +49,33 @@ class MessageFormatter
     }
 
     /**
-     * Creates WebSocket message in correct format
+     * Creates HTTP POST message payload in correct format
      * 
+     * Format: {"RIC": int, "MSG": string, "m_type": "AlphaNum", "m_func": "Func3"}
+     * 
+     * @param array $talk Talk data
+     * @param int|null $ric Radio Identification Code (default: 1142)
+     * @return array Message payload for HTTP POST
+     */
+    public static function createHttpMessage(array $talk, ?int $ric = null): array
+    {
+        $ric = $ric ?? (int)Config::get('RIC', 1142);
+        $messageText = self::formatMessage($talk);
+
+        // JSON sanitization: json_encode() automatically handles invalid characters
+        // The message text is used directly as MSG field
+        return [
+            'RIC' => $ric,
+            'MSG' => $messageText,
+            'm_type' => 'AlphaNum',
+            'm_func' => 'Func3'
+        ];
+    }
+
+    /**
+     * Creates WebSocket message in correct format (deprecated, use createHttpMessage)
+     * 
+     * @deprecated Use createHttpMessage() instead
      * @param array $talk Talk data
      * @param int|null $ric Radio Identification Code (default: 1142)
      * @return array Message in WebSocket format

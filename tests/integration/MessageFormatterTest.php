@@ -53,7 +53,9 @@ class MessageFormatterTest extends TestCase
         $this->assertStringContainsString('Test Talk', $message);
         $this->assertStringContainsString('14:00', $message);
         $this->assertStringContainsString('One', $message);
-        $this->assertStringContainsString('|', $message);
+        // Format should be "HH:MM, Room, Title"
+        $this->assertStringStartsWith('14:00', $message);
+        $this->assertStringContainsString(',', $message);
     }
 
     /**
@@ -166,5 +168,76 @@ class MessageFormatterTest extends TestCase
         $message = MessageFormatter::formatMessage($talk);
         $this->assertIsString($message);
         $this->assertStringContainsString('Test Talk', $message);
+    }
+
+    /**
+     * Test HTTP message creation
+     */
+    public function testCreateHttpMessage(): void
+    {
+        $talk = [
+            'title' => 'Test Talk',
+            'date' => '2025-12-27T14:00:00+01:00',
+            'room' => 'One'
+        ];
+
+        $payload = MessageFormatter::createHttpMessage($talk);
+
+        $this->assertIsArray($payload);
+        $this->assertArrayHasKey('RIC', $payload);
+        $this->assertArrayHasKey('MSG', $payload);
+        $this->assertArrayHasKey('m_type', $payload);
+        $this->assertArrayHasKey('m_func', $payload);
+        $this->assertEquals(1142, $payload['RIC']);
+        $this->assertEquals('AlphaNum', $payload['m_type']);
+        $this->assertEquals('Func3', $payload['m_func']);
+        $this->assertStringContainsString('Test Talk', $payload['MSG']);
+        $this->assertStringContainsString('14:00', $payload['MSG']);
+        $this->assertStringContainsString('One', $payload['MSG']);
+    }
+
+    /**
+     * Test HTTP message with custom RIC
+     */
+    public function testCreateHttpMessageCustomRic(): void
+    {
+        $talk = [
+            'title' => 'Test Talk',
+            'date' => '2025-12-27T14:00:00+01:00',
+            'room' => 'One'
+        ];
+
+        $payload = MessageFormatter::createHttpMessage($talk, 2022658);
+
+        $this->assertEquals(2022658, $payload['RIC']);
+    }
+
+    /**
+     * Test HTTP message JSON encoding
+     */
+    public function testCreateHttpMessageJsonEncoding(): void
+    {
+        $talk = [
+            'title' => 'Test Talk',
+            'date' => '2025-12-27T14:00:00+01:00',
+            'room' => 'One'
+        ];
+
+        $payload = MessageFormatter::createHttpMessage($talk);
+
+        // Should be JSON-encodable
+        $json = json_encode($payload);
+        $this->assertNotFalse($json);
+        
+        // Should be valid JSON
+        $decoded = json_decode($json, true);
+        $this->assertIsArray($decoded);
+        $this->assertEquals($payload, $decoded);
+        
+        // Verify format matches expected structure
+        $this->assertArrayHasKey('RIC', $decoded);
+        $this->assertArrayHasKey('MSG', $decoded);
+        $this->assertArrayHasKey('m_type', $decoded);
+        $this->assertArrayHasKey('m_func', $decoded);
     }
 }
