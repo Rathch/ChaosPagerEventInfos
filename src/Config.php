@@ -106,4 +106,17 @@ class Config
 
         return self::$config;
     }
+
+    /**
+     * Resets configuration (for testing purposes)
+     * 
+     * Clears loaded configuration and allows reloading from a different file.
+     * 
+     * @return void
+     */
+    public static function reset(): void
+    {
+        self::$config = [];
+        self::$loaded = false;
+    }
 }

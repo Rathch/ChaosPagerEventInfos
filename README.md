@@ -42,7 +42,14 @@ See `.env.example` for all available configuration options:
 - `HTTP_ENDPOINT`: HTTP endpoint URL for POST requests (default: `http://192.168.188.21:5000/send`)
 - `LOG_FILE`: Path to log file (default: `logs/event-pager.log`)
 - `SENT_HASHES_FILE`: Path to temporary hash list file for duplicate tracking (default: `logs/sent-hashes.txt`)
-- `RIC`: Radio Identification Code (default: 1142)
+- `ROOM_RIC_ZERO`: RIC for Room Zero (default: 1140)
+- `ROOM_RIC_ONE`: RIC for Room One (default: 1141)
+- `ROOM_RIC_GROUND`: RIC for Room Ground (default: 1142)
+- `ROOM_RIC_FUSE`: RIC for Room Fuse (default: 1143)
+- `ROOM_RIC_ALL_ROOMS`: RIC for All-Rooms notifications (default: 1150)
+- `QUEUE_DELAY_SECONDS`: Delay between successful messages in seconds (default: 5)
+- `QUEUE_MAX_RETRIES`: Maximum number of retry attempts for failed messages (default: 3)
+- `QUEUE_RETRY_DELAY_SECONDS`: Delay between retry attempts in seconds (default: 5)
 - `TEST_MODE`: If `true`, sends notification for first found talk in large room regardless of time (useful for testing). Default: `false`
 - `SIMULATE_CURRENT_TIME`: Simulated current time for local testing (ISO-8601 format, e.g., `"2025-12-27T10:15:00+01:00"`). If set, uses this time instead of system time. Useful for testing time-based notification logic. Leave empty to use real system time.
 
@@ -339,6 +346,21 @@ For local testing, you can set up a cronjob that runs more frequently:
 - Check if endpoint server is running
 - Review application logs for detailed error messages
 
+**Problem**: Messages are not being sent sequentially
+- Verify `QUEUE_DELAY_SECONDS` is configured correctly
+- Check logs for queue processing messages
+- Ensure MessageQueue is properly initialized
+
+**Problem**: HTTP 429 errors are not being handled
+- Verify `QUEUE_MAX_RETRIES` is configured (default: 3)
+- Check logs for retry attempts
+- Ensure RealHttpClient correctly detects HTTP 429 status codes
+
+**Problem**: Retry mechanism not working
+- Verify `QUEUE_MAX_RETRIES` and `QUEUE_RETRY_DELAY_SECONDS` are configured
+- Check logs for retry attempts and failures
+- Ensure HTTP status codes are being detected correctly
+
 **Problem**: Permission denied
 - Ensure script is executable: `chmod +x bin/notify.php`
 - Check log directory permissions: `chmod 755 logs/`
@@ -360,24 +382,90 @@ tail -f logs/cron.log
 3. **Time Check**: Only talks starting in 15 minutes are processed (unless TEST_MODE=true)
    - Tolerance: ±30 seconds (per Success Criteria SC-003)
 4. **Duplicate Check**: Already sent messages are not sent again (tracked via hash file)
-5. **Message Sending**: HTTP POST request is sent (or simulated if `HTTP_MODE=simulate`)
+5. **Message Queue**: Messages are enqueued for sequential sending
+   - Messages are sent one at a time (not in parallel)
+   - Configurable delay between successful messages (default: 5 seconds)
+   - Automatic retry for failed messages (HTTP 429, HTTP 500, network errors)
+   - Maximum retry attempts configurable (default: 3 attempts)
+6. **Message Sending**: HTTP POST request is sent via queue (or simulated if `HTTP_MODE=simulate`)
    - Request format: JSON with `RIC`, `MSG`, `m_type`, `m_func` fields
    - Message format: "HH:MM, Room, Title" (e.g., "10:30, One, Grand opening")
+
+## Message Queue and Retry Mechanism
+
+The system uses a message queue to ensure reliable delivery and handle HTTP 429 errors (Transmission in progress). Messages are sent **sequentially** (one at a time) with configurable delays between successful messages. Failed messages are automatically retried.
+
+### Queue Behavior
+
+- **Sequential Sending**: Only one message is sent at a time (no parallel requests)
+- **Configurable Delay**: Delay between successful messages (default: 5 seconds)
+- **Automatic Retry**: Failed messages (HTTP 429, HTTP 500, network errors) are automatically retried
+- **Max Retries**: Configurable maximum retry attempts (default: 3 attempts)
+- **Retry Delay**: Configurable delay between retry attempts (default: 5 seconds)
+
+### HTTP 429 Handling
+
+When the endpoint returns HTTP 429 (Transmission in progress), the message is automatically retried after the configured delay. This works even if HTTP 429 is caused by other systems using the same endpoint.
+
+## Room-Specific RIC Mapping
+
+The system now supports room-specific RIC (Radio Identification Code) mapping. For each talk, **two notifications are sent**:
+
+1. **Room-specific notification**: Sent to the RIC configured for the specific room (e.g., RIC 1141 for Room "One")
+2. **All-Rooms notification**: Sent to RIC 1150 (configurable via `ROOM_RIC_ALL_ROOMS`) for participants monitoring all rooms
+
+### Room-RIC Configuration
+
+Each room has its own RIC configured in `.env`:
+
+- **Room Zero** → RIC 1140 (configurable via `ROOM_RIC_ZERO`)
+- **Room One** → RIC 1141 (configurable via `ROOM_RIC_ONE`)
+- **Room Ground** → RIC 1142 (configurable via `ROOM_RIC_GROUND`)
+- **Room Fuse** → RIC 1143 (configurable via `ROOM_RIC_FUSE`)
+- **All Rooms** → RIC 1150 (configurable via `ROOM_RIC_ALL_ROOMS`)
+
+### Example: Multiple Talks
+
+If there are 4 talks at 10:45 in 4 different rooms (One, Ground, Zero, Fuse):
+- 4 room-specific notifications (one per room with its specific RIC)
+- 4 all-rooms notifications (all to RIC 1150, one per talk)
+- **Total: 8 notifications**
+
+### Example: Single Talk
+
+For a talk "Grand opening" at 10:45 in Room "One":
+- **Notification 1**: RIC 1141 (Room One) with message "10:45, One, Grand opening"
+- **Notification 2**: RIC 1150 (All Rooms) with message "10:45, One, Grand opening"
 
 ## HTTP Request Format
 
 The script sends HTTP POST requests with the following format:
 
+**Room-Specific Notification** (for Room "One"):
 ```bash
 curl -X POST http://192.168.188.21:5000/send \
   -H "Content-Type: application/json" \
   -d '{
-    "RIC": 2022658,
+    "RIC": 1141,
     "MSG": "10:30, One, Grand opening",
     "m_type": "AlphaNum",
     "m_func": "Func3"
   }'
 ```
+
+**All-Rooms Notification** (for the same talk):
+```bash
+curl -X POST http://192.168.188.21:5000/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "RIC": 1150,
+    "MSG": "10:30, One, Grand opening",
+    "m_type": "AlphaNum",
+    "m_func": "Func3"
+  }'
+```
+
+**Note**: Both requests are sent automatically for each talk - one with the room-specific RIC and one with the all-rooms RIC.
 
 ### Request Details
 
@@ -387,7 +475,9 @@ curl -X POST http://192.168.188.21:5000/send \
 
 ### Payload Fields
 
-- `RIC` (integer): Radio Identification Code (configurable via `RIC` in .env, default: 1142)
+- `RIC` (integer): Radio Identification Code
+  - For room-specific notifications: Uses room-specific RIC (e.g., 1141 for Room "One")
+  - For all-rooms notifications: Uses `ROOM_RIC_ALL_ROOMS` (default: 1150)
 - `MSG` (string): Formatted message text (format: "HH:MM, Room, Title")
   - Example: `"10:30, One, Grand opening"`
   - Format: Time (HH:MM), Room name, Talk title
@@ -425,7 +515,10 @@ src/
 ├── HttpClientInterface.php   # HTTP client interface
 ├── MockHttpClient.php        # Mock implementation (simulation)
 ├── RealHttpClient.php        # Real HTTP POST implementation
+├── MessageQueue.php          # Message queue for sequential sending
+├── QueuedMessage.php         # Single message in queue
 ├── MessageFormatter.php      # Message formatting
+├── RoomRicMapper.php         # Room-RIC mapping
 ├── TalkFilter.php            # Talk filtering
 ├── Logger.php                # Logging
 ├── DuplicateTracker.php      # Duplicate tracking

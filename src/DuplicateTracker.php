@@ -114,14 +114,26 @@ class DuplicateTracker
      * Creates hash for a talk
      * 
      * @param array $talk Talk data
+     * @param int|null $ric Optional RIC for separate hash generation (for room-specific vs all-rooms)
+     * @param string|null $messageType Optional message type ("ROOM_SPECIFIC" or "ALL_ROOMS") for separate hash generation
      * @return string Hash string
      */
-    public function createHash(array $talk): string
+    public function createHash(array $talk, ?int $ric = null, ?string $messageType = null): string
     {
         $id = $talk['id'] ?? '';
         $date = $talk['date'] ?? '';
         $room = $talk['room'] ?? '';
 
+        // If RIC or messageType is provided, include it in hash for separate tracking
+        if ($ric !== null) {
+            return md5($id . $date . $room . $ric);
+        }
+
+        if ($messageType !== null) {
+            return md5($id . $date . $room . $messageType);
+        }
+
+        // Default hash (backward compatible)
         return md5($id . $date . $room);
     }
 

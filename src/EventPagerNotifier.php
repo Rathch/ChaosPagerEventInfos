@@ -18,6 +18,7 @@ class EventPagerNotifier
     private ApiClient $apiClient;
     private DuplicateTracker $duplicateTracker;
     private HttpClientInterface $httpClient;
+    private MessageQueue $messageQueue;
     private int $notificationMinutes;
     private bool $testMode;
 
@@ -25,11 +26,13 @@ class EventPagerNotifier
         ?ApiClient $apiClient = null,
         ?DuplicateTracker $duplicateTracker = null,
         ?HttpClientInterface $httpClient = null,
+        ?MessageQueue $messageQueue = null,
         int $notificationMinutes = 15
     ) {
         $this->apiClient = $apiClient ?? new ApiClient();
         $this->duplicateTracker = $duplicateTracker ?? new DuplicateTracker();
         $this->httpClient = $httpClient ?? HttpClient::create();
+        $this->messageQueue = $messageQueue ?? new MessageQueue($this->httpClient);
         $this->notificationMinutes = $notificationMinutes;
         $this->testMode = filter_var(Config::get('TEST_MODE', 'false'), FILTER_VALIDATE_BOOLEAN);
     }
@@ -57,7 +60,8 @@ class EventPagerNotifier
             Logger::info("Filtered: " . count($largeRoomEvents) . " talks in large rooms");
 
             // 3. Time check and sending
-            $sentCount = 0;
+            $enqueuedCount = 0; // Count of talks for which messages were enqueued
+            $successfulHashes = []; // Will contain hashes of successfully sent messages
             $now = $this->getCurrentTime() ?? new \DateTime();
             $isSimulatedTime = $this->getCurrentTime() !== null;
 
@@ -68,7 +72,15 @@ class EventPagerNotifier
                 Logger::info("TEST MODE: Sending notification for first talk: " . ($firstTalk['title'] ?? 'unknown'));
                 
                 if ($this->sendNotification($firstTalk)) {
-                    $sentCount++;
+                    $enqueuedCount++;
+                }
+                
+                // Process all enqueued messages together after all talks are processed
+                // This ensures sequential sending with delay between ALL messages (not just per talk)
+                // Mark messages as sent only after successful delivery
+                $successfulHashes = $this->messageQueue->process();
+                foreach ($successfulHashes as $hash) {
+                    $this->duplicateTracker->markAsSent($hash);
                 }
             } else {
                 // Normal mode or simulated time mode: check time for each talk
@@ -84,7 +96,7 @@ class EventPagerNotifier
                     if ($this->shouldSendNotification($talk, $now)) {
                         Logger::info("✓ Talk matches time criteria: {$talkTitle} (starts at {$talkDate})");
                         if ($this->sendNotification($talk)) {
-                            $sentCount++;
+                            $enqueuedCount++;
                         }
                     } else {
                         // Log why talk was not sent (only in simulation mode to avoid log spam)
@@ -94,16 +106,27 @@ class EventPagerNotifier
                     }
                 }
                 
+                // Process all enqueued messages together after all talks are processed
+                // This ensures sequential sending with delay between ALL messages (not just per talk)
+                // Mark messages as sent only after successful delivery
+                $successfulHashes = $this->messageQueue->process();
+                foreach ($successfulHashes as $hash) {
+                    $this->duplicateTracker->markAsSent($hash);
+                }
+                
                 if ($isSimulatedTime) {
-                    Logger::info("Simulation complete: Checked {$checkedCount} talks, {$sentCount} notifications sent");
+                    $successfulMessageCount = count($successfulHashes);
+                    Logger::info("Simulation complete: Checked {$checkedCount} talks, {$enqueuedCount} talks enqueued, {$successfulMessageCount} messages successfully sent");
                 }
             }
 
             // Cleanup
             $this->duplicateTracker->cleanup();
 
-            Logger::info("Notification process completed: {$sentCount} messages sent");
-            return $sentCount;
+            // Return actual number of successfully sent messages (each hash represents one successfully sent message)
+            $successfulMessageCount = count($successfulHashes);
+            Logger::info("Notification process completed: {$successfulMessageCount} messages successfully sent (out of " . ($enqueuedCount * 2) . " enqueued)");
+            return $successfulMessageCount;
 
         } catch (\Exception $e) {
             Logger::error("Error in notification process: " . $e->getMessage());
@@ -163,29 +186,58 @@ class EventPagerNotifier
             return false;
         }
 
-        // Check duplicate first - if already sent, don't send again
-        $hash = $this->duplicateTracker->createHash($talk);
-        if ($this->duplicateTracker->isDuplicate($hash)) {
-            Logger::info("Duplicate detected, message not sent: " . ($talk['title'] ?? 'unknown'));
-            return false;
-        }
-
-        // Within notification window and not a duplicate - send notification
-        // This handles cases where script runs slightly late (e.g., 10:31 for 10:45 talk)
+        // Within notification window - send notification
+        // Duplicate checking is now done separately for room-specific and all-rooms messages
+        // This handles cases where script runs slightly late (e.g., 10:31 for a 10:45 talk)
         return true;
     }
 
     /**
      * Sends notification for a talk
      * 
+     * Sends two notifications: one room-specific and one all-rooms.
+     * 
      * @param array $talk Talk data
-     * @return bool true on success
+     * @return bool true if both notifications succeeded, false otherwise
      */
     private function sendNotification(array $talk): bool
     {
+        $roomSpecificSuccess = $this->sendRoomSpecificNotification($talk);
+        $allRoomsSuccess = $this->sendAllRoomsNotification($talk);
+        
+        // Messages are enqueued but not processed yet
+        // Queue processing happens after all talks are processed (in processTalks method)
+        // This ensures sequential sending with delay between ALL messages
+        
+        return $roomSpecificSuccess && $allRoomsSuccess;
+    }
+
+    /**
+     * Sends room-specific notification for a talk
+     * 
+     * @param array $talk Talk data
+     * @return bool true on success
+     */
+    private function sendRoomSpecificNotification(array $talk): bool
+    {
         try {
-            // Create message payload
-            $payload = MessageFormatter::createHttpMessage($talk);
+            $room = $talk['room'] ?? '';
+            
+            // Check if room is valid
+            if (!RoomRicMapper::isValidRoom($room)) {
+                Logger::warning("Invalid room '{$room}' for talk: " . ($talk['title'] ?? 'unknown') . ". Room-specific notification not sent.");
+                return false;
+            }
+
+            // Get RIC for room
+            $ric = RoomRicMapper::getRicForRoom($room);
+            if ($ric === null) {
+                Logger::error("Could not determine RIC for room '{$room}'. Room-specific notification not sent.");
+                return false;
+            }
+
+            // Create message payload with room-specific RIC
+            $payload = MessageFormatter::createHttpMessage($talk, $ric);
 
             // Get HTTP endpoint
             $endpoint = $this->getHttpEndpoint();
@@ -194,23 +246,66 @@ class EventPagerNotifier
             $sendTime = $this->getCurrentTime() ?? new \DateTime();
             $sendTimeFormatted = $sendTime->format('Y-m-d H:i:s');
 
-            // Send HTTP POST request
-            $success = $this->httpClient->sendPost($endpoint, $payload);
-
-            if ($success) {
-                // Mark as sent
-                $hash = $this->duplicateTracker->createHash($talk);
-                $this->duplicateTracker->markAsSent($hash);
-                
-                Logger::info("Notification sent at {$sendTimeFormatted}: " . ($talk['title'] ?? 'unknown'));
-            } else {
-                Logger::error("Message could not be sent at {$sendTimeFormatted}: " . ($talk['title'] ?? 'unknown'));
+            // Check duplicate for room-specific message
+            $hash = $this->duplicateTracker->createHash($talk, $ric);
+            if ($this->duplicateTracker->isDuplicate($hash)) {
+                Logger::info("Duplicate room-specific message detected, not sent: " . ($talk['title'] ?? 'unknown') . " (Room: {$room}, RIC: {$ric})");
+                return false;
             }
 
-            return $success;
+            // Enqueue message for sequential sending with hash for duplicate tracking
+            // Hash will be marked as sent only after successful delivery
+            $this->messageQueue->enqueue($payload, $endpoint, $hash);
+            
+            Logger::info("Room-specific notification enqueued at {$sendTimeFormatted}: " . ($talk['title'] ?? 'unknown') . " (Room: {$room}, RIC: {$ric})");
+            
+            return true;
 
         } catch (\Exception $e) {
-            Logger::error("Error sending notification: " . $e->getMessage());
+            Logger::error("Error sending room-specific notification: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Sends all-rooms notification for a talk
+     * 
+     * @param array $talk Talk data
+     * @return bool true on success
+     */
+    private function sendAllRoomsNotification(array $talk): bool
+    {
+        try {
+            // Get All-Rooms RIC
+            $ric = RoomRicMapper::getAllRoomsRic();
+
+            // Create message payload with All-Rooms RIC
+            $payload = MessageFormatter::createHttpMessage($talk, $ric);
+
+            // Get HTTP endpoint
+            $endpoint = $this->getHttpEndpoint();
+
+            // Get current time for logging
+            $sendTime = $this->getCurrentTime() ?? new \DateTime();
+            $sendTimeFormatted = $sendTime->format('Y-m-d H:i:s');
+
+            // Check duplicate for all-rooms message (using messageType)
+            $hash = $this->duplicateTracker->createHash($talk, null, 'ALL_ROOMS');
+            if ($this->duplicateTracker->isDuplicate($hash)) {
+                Logger::info("Duplicate all-rooms message detected, not sent: " . ($talk['title'] ?? 'unknown') . " (RIC: {$ric})");
+                return false;
+            }
+
+            // Enqueue message for sequential sending with hash for duplicate tracking
+            // Hash will be marked as sent only after successful delivery
+            $this->messageQueue->enqueue($payload, $endpoint, $hash);
+            
+            Logger::info("All-rooms notification enqueued at {$sendTimeFormatted}: " . ($talk['title'] ?? 'unknown') . " (RIC: {$ric})");
+            
+            return true;
+
+        } catch (\Exception $e) {
+            Logger::error("Error sending all-rooms notification: " . $e->getMessage());
             return false;
         }
     }

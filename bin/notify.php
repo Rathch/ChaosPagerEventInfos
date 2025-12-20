@@ -21,6 +21,9 @@ if (file_exists($autoloadFile)) {
     require_once __DIR__ . '/../src/TalkFilter.php';
     require_once __DIR__ . '/../src/DuplicateTracker.php';
     require_once __DIR__ . '/../src/MessageFormatter.php';
+    require_once __DIR__ . '/../src/RoomRicMapper.php';
+    require_once __DIR__ . '/../src/QueuedMessage.php';
+    require_once __DIR__ . '/../src/MessageQueue.php';
     require_once __DIR__ . '/../src/HttpClientInterface.php';
     require_once __DIR__ . '/../src/MockHttpClient.php';
     require_once __DIR__ . '/../src/RealHttpClient.php';
