@@ -65,4 +65,62 @@ class RealHttpClient implements HttpClientInterface
         Logger::info("HTTP POST request completed: {$endpoint}");
         return true;
     }
+
+    /**
+     * Sends HTTP POST request and returns detailed result with status code
+     * 
+     * @param string $endpoint HTTP URL
+     * @param array $payload Message payload
+     * @return array Result array with 'success' (bool) and 'statusCode' (int|null)
+     */
+    public function sendPostWithStatus(string $endpoint, array $payload): array
+    {
+        $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        
+        if ($jsonPayload === false) {
+            Logger::error("JSON encoding failed for HTTP payload");
+            return ['success' => false, 'statusCode' => null, 'error' => 'JSON encoding failed'];
+        }
+
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => [
+                    'Content-Type: application/json',
+                    'Content-Length: ' . strlen($jsonPayload),
+                    'User-Agent: ChaosPagerEventInfos/1.0'
+                ],
+                'content' => $jsonPayload,
+                'timeout' => 5
+            ]
+        ]);
+
+        $response = @file_get_contents($endpoint, false, $context);
+
+        if ($response === false) {
+            $error = error_get_last();
+            Logger::error("HTTP POST request failed: {$endpoint} - " . ($error['message'] ?? 'Unknown error'));
+            return ['success' => false, 'statusCode' => null, 'error' => $error['message'] ?? 'Network error'];
+        }
+
+        // Check HTTP status code
+        $statusCode = null;
+        if (isset($http_response_header)) {
+            $statusLine = $http_response_header[0];
+            if (preg_match('/HTTP\/\d\.\d\s+(\d{3})/', $statusLine, $matches)) {
+                $statusCode = (int)$matches[1];
+                
+                if ($statusCode >= 200 && $statusCode < 300) {
+                    Logger::info("HTTP POST request successful: {$endpoint} (Status: {$statusCode})");
+                    return ['success' => true, 'statusCode' => $statusCode];
+                } else {
+                    Logger::error("HTTP POST request failed: {$endpoint} (Status: {$statusCode})");
+                    return ['success' => false, 'statusCode' => $statusCode];
+                }
+            }
+        }
+
+        Logger::info("HTTP POST request completed: {$endpoint}");
+        return ['success' => true, 'statusCode' => $statusCode];
+    }
 }

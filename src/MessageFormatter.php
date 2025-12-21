@@ -54,12 +54,17 @@ class MessageFormatter
      * Format: {"RIC": int, "MSG": string, "m_type": "AlphaNum", "m_func": "Func3"}
      * 
      * @param array $talk Talk data
-     * @param int|null $ric Radio Identification Code (default: 1142)
+     * @param int|null $ric Radio Identification Code (should always be provided via RoomRicMapper)
      * @return array Message payload for HTTP POST
      */
     public static function createHttpMessage(array $talk, ?int $ric = null): array
     {
-        $ric = $ric ?? (int)Config::get('RIC', 1142);
+        // Fallback: Use All-Rooms RIC if no RIC provided (for backward compatibility)
+        // In production, RIC should always be provided via RoomRicMapper
+        if ($ric === null) {
+            $ric = RoomRicMapper::getAllRoomsRic();
+            Logger::warning("createHttpMessage called without RIC, using All-Rooms RIC as fallback: {$ric}");
+        }
         $messageText = self::formatMessage($talk);
 
         // JSON sanitization: json_encode() automatically handles invalid characters
@@ -77,12 +82,15 @@ class MessageFormatter
      * 
      * @deprecated Use createHttpMessage() instead
      * @param array $talk Talk data
-     * @param int|null $ric Radio Identification Code (default: 1142)
+     * @param int|null $ric Radio Identification Code (should always be provided via RoomRicMapper)
      * @return array Message in WebSocket format
      */
     public static function createWebSocketMessage(array $talk, ?int $ric = null): array
     {
-        $ric = $ric ?? (int)Config::get('RIC', 1142);
+        // Fallback: Use All-Rooms RIC if no RIC provided (for backward compatibility)
+        if ($ric === null) {
+            $ric = RoomRicMapper::getAllRoomsRic();
+        }
         $messageText = self::formatMessage($talk);
 
         // JSON sanitization: json_encode() automatically handles invalid characters

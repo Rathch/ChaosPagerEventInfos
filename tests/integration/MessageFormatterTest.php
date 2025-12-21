@@ -22,7 +22,7 @@ class MessageFormatterTest extends TestCase
         
         // Create temporary .env file for testing
         $this->testEnvFile = sys_get_temp_dir() . '/test-env-' . uniqid() . '.env';
-        file_put_contents($this->testEnvFile, "RIC=1142\nLOG_FILE=/tmp/test.log\n");
+        file_put_contents($this->testEnvFile, "ROOM_RIC_ALL_ROOMS=1150\nLOG_FILE=/tmp/test.log\n");
         
         // Initialize Config with test file
         Config::load($this->testEnvFile);
@@ -73,7 +73,8 @@ class MessageFormatterTest extends TestCase
 
         $this->assertIsArray($message);
         $this->assertArrayHasKey('SendMessage', $message);
-        $this->assertEquals(1142, $message['SendMessage']['addr']);
+        // Fallback should use All-Rooms RIC (1150) when no RIC is provided
+        $this->assertEquals(1150, $message['SendMessage']['addr']);
         $this->assertEquals('AlphaNum', $message['SendMessage']['mtype']);
         $this->assertEquals('Func3', $message['SendMessage']['func']);
         $this->assertArrayHasKey('data', $message['SendMessage']);
@@ -188,7 +189,8 @@ class MessageFormatterTest extends TestCase
         $this->assertArrayHasKey('MSG', $payload);
         $this->assertArrayHasKey('m_type', $payload);
         $this->assertArrayHasKey('m_func', $payload);
-        $this->assertEquals(1142, $payload['RIC']);
+        // Fallback should use All-Rooms RIC (1150) when no RIC is provided
+        $this->assertEquals(1150, $payload['RIC']);
         $this->assertEquals('AlphaNum', $payload['m_type']);
         $this->assertEquals('Func3', $payload['m_func']);
         $this->assertStringContainsString('Test Talk', $payload['MSG']);
