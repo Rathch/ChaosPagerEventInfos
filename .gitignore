@@ -30,3 +30,6 @@ Thumbs.db
 # PHPUnit
 .phpunit.result.cache
 phpunit.xml.bak
+
+dapnet-alpha-main/
+dapnet-alpha-main.zip

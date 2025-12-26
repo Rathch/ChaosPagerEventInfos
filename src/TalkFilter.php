@@ -4,7 +4,7 @@ namespace ChaosPagerEventInfos;
 
 /**
  * TalkFilter - Filters talks by large rooms
- * 
+ *
  * Large rooms: One, Ground, Zero, Fuse
  */
 class TalkFilter
@@ -13,25 +13,26 @@ class TalkFilter
 
     /**
      * Checks if a talk takes place in a large room
-     * 
-     * @param array $talk Talk data from API
+     *
+     * @param array<string, mixed> $talk Talk data from API
      * @return bool
      */
     public static function isLargeRoom(array $talk): bool
     {
-        if (!isset($talk['room']) || empty($talk['room'])) {
+        if (! isset($talk['room']) || empty($talk['room'])) {
             return false;
         }
 
         $room = trim($talk['room']);
+
         return in_array($room, self::LARGE_ROOMS, true);
     }
 
     /**
      * Filters talks by large rooms
-     * 
-     * @param array $talks Array of talk data
-     * @return array Filtered talks (large rooms only)
+     *
+     * @param array<int, array<string, mixed>> $talks Array of talk data
+     * @return array<int, array<string, mixed>> Filtered talks (large rooms only)
      */
     public static function filterLargeRooms(array $talks): array
     {
@@ -40,8 +41,8 @@ class TalkFilter
 
     /**
      * Returns list of large rooms
-     * 
-     * @return array
+     *
+     * @return array<int, string>
      */
     public static function getLargeRooms(): array
     {
