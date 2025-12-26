@@ -4,7 +4,7 @@ namespace ChaosPagerEventInfos;
 
 /**
  * DuplicateTracker - Prevents duplicate notifications
- * 
+ *
  * Uses hash list in temporary file with timestamps.
  * Format: hash|timestamp (one per line)
  * Hash = md5(talkId + startTime + room)
@@ -13,7 +13,8 @@ namespace ChaosPagerEventInfos;
 class DuplicateTracker
 {
     private string $hashFile;
-    private array $hashes = []; // Format: ['hash' => timestamp]
+    /** @var array<string, int> Format: ['hash' => timestamp] */
+    private array $hashes = [];
     private bool $loaded = false;
     private const CLEANUP_HOURS = 3;
 
@@ -24,7 +25,7 @@ class DuplicateTracker
 
     /**
      * Loads hash list from file
-     * 
+     *
      * @return void
      */
     private function loadHashes(): void
@@ -35,8 +36,9 @@ class DuplicateTracker
 
         $this->hashes = [];
 
-        if (!file_exists($this->hashFile)) {
+        if (! file_exists($this->hashFile)) {
             $this->loaded = true;
+
             return;
         }
 
@@ -44,6 +46,7 @@ class DuplicateTracker
         if ($content === false) {
             Logger::warning("Could not read hash file: {$this->hashFile}");
             $this->loaded = true;
+
             return;
         }
 
@@ -61,16 +64,17 @@ class DuplicateTracker
             // Parse hash|timestamp format
             $parts = explode('|', $line, 2);
             $hash = $parts[0];
-            
+
             if (isset($parts[1])) {
                 $timestamp = (int)$parts[1];
-                
+
                 // Skip entries older than 3 hours
                 if ($timestamp < $cutoffTime) {
                     $hasChanges = true;
+
                     continue;
                 }
-                
+
                 $this->hashes[$hash] = $timestamp;
             } else {
                 // Legacy format (no timestamp) - treat as old and skip
@@ -88,13 +92,13 @@ class DuplicateTracker
 
     /**
      * Saves hash list to file
-     * 
+     *
      * @return void
      */
     private function saveHashes(): void
     {
         $dir = dirname($this->hashFile);
-        if (!is_dir($dir) && $dir !== '.' && $dir !== '') {
+        if (! is_dir($dir) && $dir !== '.' && $dir !== '') {
             @mkdir($dir, 0755, true);
         }
 
@@ -104,7 +108,7 @@ class DuplicateTracker
         }
 
         $result = @file_put_contents($this->hashFile, $content, LOCK_EX);
-        
+
         if ($result === false) {
             Logger::warning("Could not write hash file: {$this->hashFile}");
         }
@@ -112,8 +116,8 @@ class DuplicateTracker
 
     /**
      * Creates hash for a talk
-     * 
-     * @param array $talk Talk data
+     *
+     * @param array<string, mixed> $talk Talk data
      * @param int|null $ric Optional RIC for separate hash generation (for room-specific vs all-rooms)
      * @param string|null $messageType Optional message type ("ROOM_SPECIFIC" or "ALL_ROOMS") for separate hash generation
      * @return string Hash string
@@ -139,15 +143,15 @@ class DuplicateTracker
 
     /**
      * Checks if hash already exists (message already sent)
-     * 
+     *
      * @param string $hash Hash string
      * @return bool
      */
     public function isDuplicate(string $hash): bool
     {
         $this->loadHashes();
-        
-        if (!isset($this->hashes[$hash])) {
+
+        if (! isset($this->hashes[$hash])) {
             return false;
         }
 
@@ -155,11 +159,12 @@ class DuplicateTracker
         $timestamp = $this->hashes[$hash];
         $now = time();
         $cutoffTime = $now - (self::CLEANUP_HOURS * 3600);
-        
+
         if ($timestamp < $cutoffTime) {
             // Entry is too old, remove it
             unset($this->hashes[$hash]);
             $this->saveHashes();
+
             return false;
         }
 
@@ -168,35 +173,36 @@ class DuplicateTracker
 
     /**
      * Marks hash as sent
-     * 
+     *
      * @param string $hash Hash string
      * @return void
      */
     public function markAsSent(string $hash): void
     {
         $this->loadHashes();
-        
+
         $now = time();
-        
+
         // Update timestamp if already present, or add new entry
         if (isset($this->hashes[$hash])) {
             // Already exists, just update timestamp
             $this->hashes[$hash] = $now;
             $this->saveHashes();
+
             return;
         }
 
         // Add new entry
         $this->hashes[$hash] = $now;
-        
+
         // Append to file
         $dir = dirname($this->hashFile);
-        if (!is_dir($dir) && $dir !== '.' && $dir !== '') {
+        if (! is_dir($dir) && $dir !== '.' && $dir !== '') {
             @mkdir($dir, 0755, true);
         }
 
         $result = @file_put_contents($this->hashFile, $hash . '|' . $now . PHP_EOL, FILE_APPEND | LOCK_EX);
-        
+
         if ($result === false) {
             Logger::warning("Could not write hash to file: {$this->hashFile}");
         }
@@ -204,21 +210,21 @@ class DuplicateTracker
 
     /**
      * Cleans up old hashes (older than 3 hours)
-     * 
+     *
      * Removes entries older than 3 hours from the hash file.
-     * 
+     *
      * @return void
      */
     /**
      * Cleans up old hashes (older than 3 hours)
-     * 
+     *
      * Removes entries older than 3 hours from the hash file.
-     * 
+     *
      * @return void
      */
     public function cleanup(): void
     {
-        if (!file_exists($this->hashFile)) {
+        if (! file_exists($this->hashFile)) {
             return;
         }
 

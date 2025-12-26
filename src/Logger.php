@@ -4,7 +4,7 @@ namespace ChaosPagerEventInfos;
 
 /**
  * Logger - Simple logging with file_put_contents
- * 
+ *
  * Per Constitution: Minimal dependencies, native PHP functions.
  */
 class Logger
@@ -17,23 +17,24 @@ class Logger
 
     /**
      * Initializes logger with log file from Config
-     * 
+     *
      * @return void
      */
     public static function init(): void
     {
-        self::$logFile = Config::get('LOG_FILE', 'logs/event-pager.log');
-        
+        $logFile = Config::get('LOG_FILE', 'logs/event-pager.log');
+        self::$logFile = $logFile !== null ? (string)$logFile : 'logs/event-pager.log';
+
         // Create log directory if it doesn't exist
         $logDir = dirname(self::$logFile);
-        if (!is_dir($logDir) && $logDir !== '.' && $logDir !== '') {
+        if ($logDir !== '' && $logDir !== '.' && ! is_dir($logDir)) {
             mkdir($logDir, 0755, true);
         }
     }
 
     /**
      * Logs a message
-     * 
+     *
      * @param string $level Log level (INFO, WARNING, ERROR)
      * @param string $message Message
      * @return void
@@ -44,15 +45,20 @@ class Logger
             self::init();
         }
 
+        $logFile = self::$logFile;
+        if ($logFile === null) {
+            return; // Should not happen after init, but handle gracefully
+        }
+
         $timestamp = date('Y-m-d H:i:s');
         $logEntry = "[{$timestamp}] {$level}: {$message}" . PHP_EOL;
-        
-        file_put_contents(self::$logFile, $logEntry, FILE_APPEND | LOCK_EX);
+
+        file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
     }
 
     /**
      * Logs INFO message
-     * 
+     *
      * @param string $message Message
      * @return void
      */
@@ -63,7 +69,7 @@ class Logger
 
     /**
      * Logs WARNING message
-     * 
+     *
      * @param string $message Message
      * @return void
      */
@@ -74,7 +80,7 @@ class Logger
 
     /**
      * Logs ERROR message
-     * 
+     *
      * @param string $message Message
      * @return void
      */
