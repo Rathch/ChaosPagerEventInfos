@@ -26,12 +26,15 @@ class DapnetCallFormatter
         // Truncate to max 160 characters with intelligent shortening
         $truncatedText = self::truncateMessage($sanitizedText, 160);
 
-        // Validate subscriber ID
+        // Validate subscriber ID and ensure it's a string
         if (empty($subscriberId)) {
             Logger::error("Subscriber ID is empty");
 
             throw new \RuntimeException("Subscriber ID is required");
         }
+
+        // Ensure subscriber ID is a string (API requires string, not integer)
+        $subscriberIdString = (string)$subscriberId;
 
         // Get transmitter groups from config
         $transmitterGroups = Config::getDapnetTransmitterGroups();
@@ -48,7 +51,7 @@ class DapnetCallFormatter
             'local' => Config::getDapnetLocal(),
             'priority' => Config::getDapnetPriority(),
             'subscriber_groups' => [], // Empty, using individual subscribers
-            'subscribers' => [$subscriberId], // Single subscriber
+            'subscribers' => [$subscriberIdString], // Single subscriber (ensured as string)
             'transmitter_groups' => $transmitterGroups,
             'transmitters' => [], // Empty, using transmitter groups
             'use_home_info' => Config::getDapnetUseHomeInfo(),
