@@ -56,26 +56,37 @@ class DapnetSubscriberManager
 
         $response = @file_get_contents($endpoint, false, $context);
 
-        if ($response === false) {
-            // Check if it's a 404 (subscriber doesn't exist) vs other error
-            if (! empty($http_response_header)) {
-                $statusLine = $http_response_header[0];
-                if (preg_match('/HTTP\/\d\.\d\s+(\d{3})/', $statusLine, $matches)) {
-                    $statusCode = (int)$matches[1];
-                    if ($statusCode === 404) {
-                        return false; // Subscriber doesn't exist
-                    }
+        // Check HTTP status code from response headers
+        // According to API implementation, GET /subscribers/:id returns HTTP 400 if subscriber doesn't exist
+        // Note: file_get_contents returns the response body even for HTTP 400, so we must check headers
+        if (! empty($http_response_header)) {
+            $statusLine = $http_response_header[0];
+            if (preg_match('/HTTP\/\d\.\d\s+(\d{3})/', $statusLine, $matches)) {
+                $statusCode = (int)$matches[1];
+
+                if ($statusCode === 200) {
+                    // Success - subscriber exists
+                    return true;
+                } elseif ($statusCode === 400) {
+                    // Subscriber doesn't exist (API returns 400 with {"message":"subscriber does not exist"})
+                    return false;
+                } else {
                     // Other error (401, 403, 500, etc.)
                     Logger::warning("DAPNET API error checking subscriber {$subscriberId}: HTTP {$statusCode}");
 
                     return false;
                 }
             }
+        }
+
+        // If we can't determine status code, assume failure
+        if ($response === false) {
+            Logger::warning("DAPNET API error checking subscriber {$subscriberId}: No response received");
 
             return false;
         }
 
-        // Success - subscriber exists
+        // If we got a response but couldn't parse headers, assume success (fallback)
         return true;
     }
 
@@ -146,23 +157,31 @@ class DapnetSubscriberManager
 
         $response = @file_get_contents($endpoint, false, $context);
 
-        if ($response === false) {
-            $error = error_get_last();
-            Logger::error("DAPNET API subscriber creation failed: {$endpoint} - " . ($error['message'] ?? 'Unknown error'));
-
-            return false;
-        }
-
-        // Check HTTP status code
+        // Check HTTP status code from response headers
+        // According to API implementation:
+        // - HTTP 201: Subscriber created or updated
+        // - HTTP 200: Subscriber exists, no changes needed
+        // - HTTP 400: Bad request (e.g., validation error)
+        // - HTTP 403: Insufficient permissions
+        // Note: file_get_contents returns the response body even for error codes, so we must check headers
         if (! empty($http_response_header)) {
             $statusLine = $http_response_header[0];
             if (preg_match('/HTTP\/\d\.\d\s+(\d{3})/', $statusLine, $matches)) {
                 $statusCode = (int)$matches[1];
 
                 if ($statusCode === 201) {
-                    Logger::info("DAPNET subscriber created successfully: {$subscriberId}");
+                    Logger::info("DAPNET subscriber created/updated successfully: {$subscriberId}");
 
                     return true;
+                } elseif ($statusCode === 200) {
+                    Logger::info("DAPNET subscriber already exists with same content: {$subscriberId}");
+
+                    return true;
+                } elseif ($statusCode === 400) {
+                    $errorMsg = $response !== false ? json_decode($response, true)['message'] ?? 'Bad request' : 'Bad request';
+                    Logger::error("DAPNET subscriber creation failed: HTTP 400 - {$errorMsg}");
+
+                    return false;
                 } elseif ($statusCode === 403) {
                     Logger::error("DAPNET subscriber creation failed: Insufficient permissions (HTTP 403). Admin/support credentials required.");
 
@@ -174,6 +193,17 @@ class DapnetSubscriberManager
                 }
             }
         }
+
+        // If we can't determine status code
+        if ($response === false) {
+            $error = error_get_last();
+            Logger::error("DAPNET API subscriber creation failed: {$endpoint} - " . ($error['message'] ?? 'Unknown error'));
+
+            return false;
+        }
+
+        // If we got a response but couldn't parse headers, assume failure
+        Logger::warning("DAPNET API subscriber creation: Could not parse HTTP status code");
 
         return false;
     }
