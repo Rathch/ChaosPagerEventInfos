@@ -16,11 +16,13 @@ class MessageQueue
     private int $delaySeconds;
     private int $maxRetries;
     private int $retryDelaySeconds;
+    private int $allRoomsDelaySeconds;
 
     // Default values
     private const DEFAULT_DELAY_SECONDS = 5;
     private const DEFAULT_MAX_RETRIES = 3;
     private const DEFAULT_RETRY_DELAY_SECONDS = 5;
+    private const DEFAULT_ALL_ROOMS_DELAY_SECONDS = 3; // Additional delay between all-rooms messages
 
     /**
      * Creates a new message queue
@@ -31,6 +33,7 @@ class MessageQueue
         $this->delaySeconds = $this->getConfigInt('QUEUE_DELAY_SECONDS', self::DEFAULT_DELAY_SECONDS);
         $this->maxRetries = $this->getConfigInt('QUEUE_MAX_RETRIES', self::DEFAULT_MAX_RETRIES);
         $this->retryDelaySeconds = $this->getConfigInt('QUEUE_RETRY_DELAY_SECONDS', self::DEFAULT_RETRY_DELAY_SECONDS);
+        $this->allRoomsDelaySeconds = $this->getConfigInt('QUEUE_ALL_ROOMS_DELAY_SECONDS', self::DEFAULT_ALL_ROOMS_DELAY_SECONDS);
     }
 
     /**
@@ -112,7 +115,26 @@ class MessageQueue
 
             // Delay between messages (only if message was successfully sent and there are more messages)
             if ($message->getStatus() === QueuedMessage::STATUS_SENT && ! empty($this->messages)) {
-                sleep($this->delaySeconds);
+                $delay = $this->delaySeconds;
+                
+                // Check if current message is for all-rooms subscriber (1150)
+                $payload = $message->getPayload();
+                $isAllRoomsMessage = $this->isAllRoomsMessage($payload);
+                
+                // If current message is for all-rooms, check if next message is also for all-rooms
+                if ($isAllRoomsMessage) {
+                    $nextMessage = $this->messages[0] ?? null;
+                    if ($nextMessage !== null) {
+                        $nextPayload = $nextMessage->getPayload();
+                        if ($this->isAllRoomsMessage($nextPayload)) {
+                            // Both messages are for all-rooms subscriber - add extra delay
+                            $delay += $this->allRoomsDelaySeconds;
+                            Logger::info("Adding extra delay ({$this->allRoomsDelaySeconds}s) between all-rooms messages");
+                        }
+                    }
+                }
+                
+                sleep($delay);
             }
         }
 
@@ -246,6 +268,20 @@ class MessageQueue
     public function isProcessing(): bool
     {
         return $this->isProcessing;
+    }
+
+    /**
+     * Checks if a message is for the all-rooms subscriber (1150)
+     *
+     * @param array<string, mixed> $payload DAPNET call payload
+     * @return bool True if message is for all-rooms subscriber
+     */
+    private function isAllRoomsMessage(array $payload): bool
+    {
+        $subscribers = $payload['subscribers'] ?? [];
+        
+        // Check if subscriber 1150 is in the subscribers array (as string or integer)
+        return in_array('1150', $subscribers, true) || in_array(1150, $subscribers, true);
     }
 
 }
